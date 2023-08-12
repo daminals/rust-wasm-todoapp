@@ -1,0 +1,22 @@
+name = "todo-rust"
+type = "javascript"
+workers_dev = true
+compatibility_date = "2023-08-12"
+main = "build/worker/shim.mjs"
+
+kv_namespaces = [
+  { binding = "todos", id = "todo_kv_id" }
+]
+
+[vars]
+WORKERS_RS_VERSION = "0.0.18"
+
+[build]
+command = "cargo install -q worker-build && worker-build --release" # required
+
+[[rules]]
+globs = [ "**/*.wasm" ]
+type = "CompiledWasm"
+
+# read more about configuring your Worker via wrangler.toml at:
+# https://developers.cloudflare.com/workers/cli-wrangler/configuration
