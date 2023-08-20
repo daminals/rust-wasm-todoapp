@@ -88,7 +88,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
         .await
 }
 
-// create a macro that reads a KV store
+// create a macro that gets a KV store to perform operations on
 #[macro_export]
 macro_rules! get_kv_store {
     ($expr:expr) => {
