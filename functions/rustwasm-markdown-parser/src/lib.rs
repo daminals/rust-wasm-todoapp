@@ -30,85 +30,108 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
     // Environment bindings like KV Stores, Durable Objects, Secrets, and Variables.
     router
         .get_async("/api/todo/", |_req, ctx| async move {
-          console_log!("Getting todos");
-          let todo_result = ctx.kv("todos");
-          // check for err
-          if todo_result.is_err() {
-            console_log!("Error getting todos");
-            return Response::error("Error getting todos", 500);
-          }
-          let todos = todo_result.unwrap();
-          let keys_as_key_vectors = todos.list().execute().await;
-          // check for err
-          if keys_as_key_vectors.is_err() {
-            console_log!("Error getting todos");
-            return Response::error("Error getting todos", 500);
-          }
-          let keys_as_key_vectors = keys_as_key_vectors.unwrap().keys;
-          let keys_as_string_vectors = keys_as_key_vectors.into_iter().map(|key| key.name).collect::<Vec<_>>();
-          let output = json!({ "keys": keys_as_string_vectors });
-          console_log!("Got todos: {}", output);
-          Response::from_json(&output)
+            console_log!("Getting todos");
+            let todos = get_kv_store!(ctx.kv("todos"));
+            let keys_as_key_vectors = match todos.list().execute().await {
+                Ok(keys_as_key_vectors) => keys_as_key_vectors.keys,
+                Err(_) => {
+                    console_log!("Error getting todos");
+                    return Response::error("Error getting todos", 500);
+                }
+            };
+            let keys_as_string_vectors = keys_as_key_vectors
+                .into_iter()
+                .map(|key| key.name)
+                .collect::<Vec<_>>();
+            let output = json!({ "keys": keys_as_string_vectors });
+            console_log!("Got todos: {}", output);
+            Response::from_json(&output)
         })
-        .post_async("/api/todo/",|mut req, ctx| async move {
-          let todo_result = ctx.kv("todos");
-          // check for err
-          if todo_result.is_err() {
-            console_log!("Error getting todos");
-            return Response::error("Error getting todos", 500);
-          }
-          let todos = todo_result.unwrap();
-          let body_result = req.json::<serde_json::Value>().await;
-          // check for errs
-          if body_result.is_err() {
-            console_log!("Error getting body");
-            return Response::error("Error getting body", 500);
-          }
-          let body = body_result.unwrap();
-          // get the text key from the body
-          let text = body.get("text").unwrap().as_str().unwrap();
-          // put the text key into the KV store
-          let todo_put_check = todos.put(text, "");
-          // check for err
-          if todo_put_check.is_err() {
-            console_log!("Error creating todo: {}", text);
-            return Response::error("Error creating todo", 500);
-          }
-          let result_check = todo_put_check.unwrap().execute().await;
-          if result_check.is_err() {
-            console_log!("Error creating todo: {}", text);
-            return Response::error("Error creating todo", 500);
-          }
-          console_log!("Created todo: {}", text);
-          Response::ok("ok")
+        .post_async("/api/todo/", |mut req, ctx| async move {
+            let todos = get_kv_store!(ctx.kv("todos"));
+            let body = get_body!(req.json::<serde_json::Value>().await);
+            let text = get_text!(body.get("text"));
+            // put the text key into the KV store
+            match todos.put(text, "") {
+                // execute put
+                Ok(todo_put_check) => match todo_put_check.execute().await {
+                    Ok(result_check) => result_check,
+                    Err(_) => {
+                        console_log!("Error creating todo: {}", text);
+                        return Response::error("Error creating todo", 500);
+                    }
+                },
+                Err(_) => {
+                    console_log!("Error creating todo: {}", text);
+                    return Response::error("Error creating todo", 500);
+                }
+            };
+            console_log!("Created todo: {}", text);
+            Response::ok("ok")
         })
         .delete_async("/api/todo/", |mut req, ctx| async move {
-          let todo_result = ctx.kv("todos");
-          // check for err
-          if todo_result.is_err() {
-            console_log!("Error getting todos");
-            return Response::error("Error getting todos", 500);
-          }
-          let todos = todo_result.unwrap();
-          let body_result = req.json::<serde_json::Value>().await;
-          // check for errs
-          if body_result.is_err() {
-            console_log!("Error getting body");
-            return Response::error("Error getting body", 500);
-          }
-          let body = body_result.unwrap();
-          // get the text key from the body
-          let text = body.get("text").unwrap().as_str().unwrap();
-          // put the text key into the KV store
-          let result_check = todos.delete(text).await;
-          // check for err
-          if result_check.is_err() {
-            console_log!("Error deleting todo: {}", text);
-            return Response::error("Error deleting todo", 500);
-          }
-          console_log!("Deleted todo: {}", text);
-          Response::ok("ok")
+            let todos = get_kv_store!(ctx.kv("todos"));
+            let body = get_body!(req.json::<serde_json::Value>().await);
+            let text = get_text!(body.get("text"));
+            // delete the text key into the KV store
+            match todos.delete(text).await {
+                Ok(result_check) => result_check,
+                Err(_) => {
+                    console_log!("Error deleting todo: {}", text);
+                    return Response::error("Error deleting todo", 500);
+                }
+            };
+            console_log!("Deleted todo: {}", text);
+            Response::ok("ok")
         })
         .run(req, env)
         .await
+}
+
+// create a macro that reads a KV store
+#[macro_export]
+macro_rules! get_kv_store {
+    ($expr:expr) => {
+        match $expr {
+            Ok(todos) => todos,
+            Err(_) => {
+                console_log!("Error getting todos");
+                return Response::error("Error getting todos", 500);
+            }
+        }
+    };
+}
+
+// create a macro that gets the body of a request
+#[macro_export]
+macro_rules! get_body {
+    ($expr:expr) => {
+        match $expr {
+            Ok(body_value) => body_value,
+            Err(_) => {
+                console_log!("Error getting body");
+                return Response::error("Error getting body", 500);
+            }
+        }
+    };
+}
+
+// create a macro that gets text from the body
+#[macro_export]
+macro_rules! get_text {
+    ($expr:expr) => {
+        match $expr {
+            Some(text) => match text.as_str() {
+                Some(text) => text,
+                None => {
+                    console_log!("Error getting text: Nil");
+                    return Response::error("Error getting text: Nil", 500);
+                }
+            },
+            None => {
+                console_log!("Error getting text");
+                return Response::error("Error getting text", 500);
+            }
+        }
+    };
 }

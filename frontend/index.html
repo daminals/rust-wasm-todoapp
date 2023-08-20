@@ -28,6 +28,7 @@
 
       const todoText = todoInput.value
       if (!todoText) return
+      todoInput.value = ''
 
       // Update local state immediately
       const todo = todoText;
@@ -43,10 +44,6 @@
       })
 
       console.log(response)
-
-      if (response.ok) {
-        todoInput.value = ''
-      }
     })
 
     async function fetchTodos() {
